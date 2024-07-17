@@ -4,7 +4,7 @@
     <TargetFramework>net46</TargetFramework>
     <AssemblyName>BattleLib</AssemblyName>
     <Description>Bopl Battle Library Mod</Description>
-    <Version>0.1.0</Version>
+    <Version>0.1.2</Version>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <LangVersion>latest</LangVersion>
   </PropertyGroup>
