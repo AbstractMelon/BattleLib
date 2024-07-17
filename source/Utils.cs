@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -7,6 +7,10 @@ using System.Reflection;
 using BattleLib;
 using UnityEngine;
 using BoplFixedMath;
+using UnityEngine.SceneManagement;
+using UnityEngine.InputSystem;
+using Steamworks;
+using UnityEngine.UIElements;
 
 namespace BattleLib
 {
@@ -80,6 +84,75 @@ namespace BattleLib
         {
             FieldInfo physicsField = typeof(PlayerBody).GetField("physics", BindingFlags.NonPublic | BindingFlags.Instance);
             return physicsField.GetValue(playerBody) as PlayerPhysics;
+        }
+
+        // Utility to check if the game session is currently active
+        public static bool IsGameSessionActive()
+        {
+            GameSessionHandler gameSessionHandler = GetGameSessionHandler();
+            return gameSessionHandler != null && !IsGameOver;
+        }
+
+        // Utility to get all active players in the game session
+        public static List<Player> GetAllPlayers()
+        {
+            GameSessionHandler gameSessionHandler = GetGameSessionHandler();
+            if (gameSessionHandler != null)
+            {
+                return PlayerHandler.Get().PlayerList();
+            }
+            return new List<Player>();
+        }
+
+        // Utility to get a specific player by their ID
+        public static Player GetPlayerById(int playerId)
+        {
+            GameSessionHandler gameSessionHandler = GetGameSessionHandler();
+
+            if (gameSessionHandler != null)
+            {
+                return PlayerHandler.Get().PlayerList().FirstOrDefault(p => p.Id == playerId);
+            }
+            return null;
+        }
+
+        // Utility to check if a player is alive
+        public static bool IsPlayerAlive(Player player)
+        {
+            return player != null && player.CauseOfDeath == CauseOfDeath.NotDeadYet;
+        }
+
+        /*
+        // Utility to get the current round number
+        public static int GetCurrentRoundNumber()
+        {
+            GameSessionHandler gameSessionHandler = GetGameSessionHandler();
+            return gameSessionHandler?.RoundNumber ?? 0;
+        }
+        */
+
+        // Utility to end the current game session
+        public static void EndGameSession()
+        {
+            GameSessionHandler gameSessionHandler = GetGameSessionHandler();
+            if (gameSessionHandler != null)
+            {
+                IsGameOver = true;
+                // gameSessionHandler.EndGame();
+            }
+        }
+
+        // Utility to respawn all players at their spawn positions
+        public static void RespawnAllPlayers()
+        {
+            GameSessionHandler gameSessionHandler = GetGameSessionHandler();
+            if (gameSessionHandler != null)
+            {
+                foreach (var player in PlayerHandler.Get().PlayerList())
+                {
+                    player.Respawn(player.SpawnPosition); // Assuming SpawnPosition is a property of Player
+                }
+            }
         }
     }
     public class AbilityUtils
@@ -201,6 +274,15 @@ namespace BattleLib
         {
             return ability.KillPlayersOnContact;
         }
+
+
+        /*
+        // Utility to get all abilities of a player
+        public static List<Ability> GetAllAbilities(Player player)
+        {
+            return player?.Abilities ?? new List<Ability>();
+        }
+        */
     }
     public static class PlayerUtils
     {
@@ -268,5 +350,174 @@ namespace BattleLib
             player.CurrentAbilities?.Clear();
             player.RespawnPositions?.Clear();
         }
+
+        // Utility to check if a player is a clone (not the original player)
+        public static bool IsClone(this Player player)
+        {
+            return player.IsClone();
+        }
+
+        // Utility to set the player's position based on a Vec2 position
+        public static void SetPosition(this Player player, Vec2 position)
+        {
+            player.Position = position;
+        }
+
+        // Utility to check if the player is currently winning
+        public static bool IsWinning(this Player player)
+        {
+            return player.IsMostRecentWinner;
+        }
+        public static SteamId GetSteamId()
+        {
+            return SteamClient.SteamId;
+        }
+
+
     }
+
+    public static class MiscUtils {
+        public static void ResetGameState()
+        {
+            GameSessionHandler.selfRef.gameOver = false;
+            GameSessionHandler.selfRef.transitionFade.gameObject.SetActive(true);
+
+            CircleBG.TimeSpentInMenus = 0f;
+
+            // Reset player positions and scales
+            foreach (var player in PlayerHandler.Get().PlayerList())
+            {
+                player.Position = Vec2.zero;
+                player.Scale = Fix.One;
+            }
+
+            // Load the main menu scene
+            SceneManager.LoadScene("MainMenu", LoadSceneMode.Single);
+        }
+
+        public static InputDevice GetInputDevice()
+        {
+            return InputSystem.devices[0];
+        }
+
+        public static bool UsesKeyboardAndMouse()
+        {
+            var device = GetInputDevice();
+            return device is Keyboard || device is Mouse;
+        }
+
+        public static bool UsesController()
+        {
+            var device = GetInputDevice();
+            return device is Gamepad || device is Joystick;
+        }
+    }
+
+    public static class GameUtils {
+        public static bool IsSuddenDeathActive()
+        {
+            return GameSessionHandler.SuddenDeathInProgress;
+        }
+        public static void ActivateSuddenDeath(bool activate)
+        {
+            GameSessionHandler.SuddenDeathInProgress = activate;
+        }
+
+        public static void PauseGame()
+        {
+            GameSessionHandler.GameIsPaused = true;
+            InputUpdater.PauseAllRumble();
+            // AudioManager.Get().PauseAll();
+        }
+
+        public static void ResumeGame()
+        {
+            GameSessionHandler.GameIsPaused = false;
+            // InputUpdater.ResumeAllRumble();
+            // AudioManager.Get().ResumeAll();
+        }
+
+        // Method to check if the game has ended
+        public static bool HasGameEnded()
+        {
+            return GameSessionHandler.selfRef != null && !GameSessionHandler.selfRef.gameInProgress;
+        }
+
+        // Method to end the game immediately
+        public static void EndGameImmediately()
+        {
+            if (GameSessionHandler.selfRef != null && GameSessionHandler.selfRef.gameInProgress)
+            {
+                GameSessionHandler.selfRef.DeclareGameUndecided(PlayerHandler.Get().PlayerList());
+            }
+        }
+    }
+
+    public static class CameraUtils {
+        /// <summary>
+        /// Smoothly move an object towards a target position.
+        /// </summary>
+        public static void SmoothMove(Transform transform, Vector3 targetPosition, float smoothTime)
+        {
+            Vector3 velocity = Vector3.zero;
+            transform.position = Vector3.SmoothDamp(transform.position, targetPosition, ref velocity, smoothTime);
+        }
+
+        /// <summary>
+        /// Clamp a Vector3 position within specified bounds.
+        /// </summary>
+        public static Vector3 ClampPosition(Vector3 position, Vector2 minBounds, Vector2 maxBounds)
+        {
+            position.x = Mathf.Clamp(position.x, minBounds.x, maxBounds.x);
+            position.y = Mathf.Clamp(position.y, minBounds.y, maxBounds.y);
+            return position;
+        }
+
+        /// <summary>
+        /// Calculate the distance between two Vector3 positions.
+        /// </summary>
+        public static float CalculateDistance(Vector3 fromPosition, Vector3 toPosition)
+        {
+            return Vector3.Distance(fromPosition, toPosition);
+        }
+
+        /// <summary>
+        /// Round a float value to the nearest pixel.
+        /// </summary>
+        public static float RoundToNearestPixel(float unityUnits, float pixelToUnits)
+        {
+            return Mathf.Round(unityUnits * pixelToUnits) * (1f / pixelToUnits);
+        }
+
+        /// <summary>
+        /// Smoothly adjust the orthographic size of a Camera.
+        /// </summary>
+        public static void SmoothZoom(Camera camera, float targetSize, float smoothTime, float minSize, float maxSize)
+        {
+            camera.orthographicSize = Mathf.Clamp(
+                Mathf.Lerp(camera.orthographicSize, targetSize, smoothTime * Time.deltaTime),
+                minSize,
+                maxSize
+            );
+        }
+
+        /// <summary>
+        /// Get the average position of a list of Vector3 positions.
+        /// </summary>
+        public static Vector3 GetAveragePosition(List<Vector3> positions)
+        {
+            if (positions.Count == 0)
+                return Vector3.zero;
+
+            Vector3 average = Vector3.zero;
+            foreach (Vector3 pos in positions)
+            {
+                average += pos;
+            }
+            average /= positions.Count;
+
+            return average;
+        }
+    }
+
 }
